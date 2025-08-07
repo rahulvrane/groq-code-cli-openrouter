@@ -11,50 +11,28 @@ const searchCommandHandler = (context: CommandContext) => {
 		return;
 	}
 
-	const [subcommand, ...options] = args;
+	const query = args.join(' ');
 
-	const webSearchOptions: any = {
-		enabled: false,
-		provider: '',
-		settings: {},
-	};
-
-	if (subcommand === 'on') {
-		webSearchOptions.enabled = true;
-		options.forEach(option => {
-			const [key, value] = option.split('=');
-			if (key && value) {
-				if (key === 'provider') {
-					webSearchOptions.provider = value;
-				} else {
-					webSearchOptions.settings[key] = value;
-				}
-			}
-		});
-		agent.setWebSearch(webSearchOptions);
+	if (!query) {
 		addMessage({
 			role: 'system',
-			content: `Web search has been enabled. Your next message will use it. Options: ${JSON.stringify(
-				webSearchOptions,
-			)}`,
+			content: 'Usage: /search <query>',
 		});
-	} else if (subcommand === 'off') {
-		agent.setWebSearch({enabled: false});
-		addMessage({
-			role: 'system',
-			content: 'Web search has been disabled.',
-		});
-	} else {
-		addMessage({
-			role: 'system',
-			content:
-				'Usage: /search [on|off] provider=[groq|openrouter] [key=value...]',
-		});
+		return;
 	}
+
+	// We will implement agent.search in the next step.
+	// For now, we are just confirming to the user.
+	addMessage({
+		role: 'system',
+		content: `Searching for: "${query}"...`,
+	});
+
+	// agent.search(query);
 };
 
 export const searchCommand: CommandDefinition = {
 	command: 'search',
-	description: 'Enable or disable web search for the next message',
+	description: 'Performs a web search with the given query',
 	handler: searchCommandHandler,
 };

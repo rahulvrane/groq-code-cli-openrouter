@@ -20,14 +20,6 @@ interface Message {
 	tool_call_id?: string;
 }
 
-interface WebSearchSettings {
-	enabled: boolean;
-	provider?: 'groq' | 'openrouter';
-	settings?: {
-		[key: string]: any;
-	};
-}
-
 const GROQ_MODELS = [
 	'moonshotai/kimi-k2-instruct',
 	'openai/gpt-oss-120b',
@@ -53,7 +45,6 @@ export class Agent {
 	private sessionAutoApprove: boolean = false;
 	private systemMessage: string;
 	private configManager: ConfigManager;
-	private webSearchSettings: WebSearchSettings = {enabled: false};
 	private onToolStart?: (name: string, args: Record<string, any>) => void;
 	private onToolEnd?: (name: string, result: any) => void;
 	private onToolApproval?: (
@@ -185,8 +176,16 @@ When asked about your identity, you should identify yourself as a coding assista
 			toolName: string,
 			toolArgs: Record<string, any>,
 		) => Promise<{approved: boolean; autoApproveSession?: boolean}>;
-		onThinkingText?: (content: string) => void;
-		onFinalMessage?: (content: string) => void;
+		onThinkingText?: (
+			content: string,
+			reasoning?: string,
+			searchResults?: any,
+		) => void;
+		onFinalMessage?: (
+			content: string,
+			reasoning?: string,
+			searchResults?: any,
+		) => void;
 		onMaxIterations?: (maxIterations: number) => Promise<boolean>;
 		onApiUsage?: (usage: {
 			prompt_tokens: number;
@@ -262,10 +261,6 @@ When asked about your identity, you should identify yourself as a coding assista
 		this.sessionAutoApprove = enabled;
 	}
 
-	public setWebSearch(settings: WebSearchSettings): void {
-		this.webSearchSettings = settings;
-	}
-
 	public interrupt(): void {
 		debugLog('Interrupting current request');
 		this.isInterrupted = true;
@@ -282,11 +277,7 @@ When asked about your identity, you should identify yourself as a coding assista
 		});
 	}
 
-	async chat(userInput: string): Promise<void> {
-		// Reset interrupt flag at the start of a new chat
-		this.isInterrupted = false;
-
-		// Check API key on first message send
+	private async initializeClient(): Promise<void> {
 		if (!this.client) {
 			debugLog(`Initializing ${this.provider} client...`);
 			let apiKey: string | null = null;
@@ -309,6 +300,55 @@ When asked about your identity, you should identify yourself as a coding assista
 			}
 			debugLog(`${this.provider} client initialized successfully`);
 		}
+	}
+
+	public async search(query: string): Promise<void> {
+		await this.initializeClient();
+
+		const requestBody: any = {
+			model: this.model,
+			messages: [{role: 'user', content: query}],
+			temperature: this.temperature,
+			max_tokens: 8000,
+			stream: false,
+		};
+
+		if (this.provider === 'groq') {
+			if (
+				!this.model.startsWith('compound-beta')
+			) {
+				requestBody.model = 'compound-beta';
+			}
+		} else if (this.provider === 'openrouter') {
+			if (!requestBody.model.endsWith(':online')) {
+				requestBody.model += ':online';
+			}
+		}
+
+		try {
+			const response = await this.client!.chat.completions.create(requestBody);
+			const message = response.choices[0].message;
+			const reasoning = (message as any).reasoning;
+			const searchResults =
+				(message as any).executed_tools?.[0]?.search_results ||
+				(message as any).annotations;
+
+			if (this.onFinalMessage) {
+				this.onFinalMessage(message.content || '', reasoning, searchResults);
+			}
+		} catch (error) {
+			if (this.onFinalMessage) {
+				this.onFinalMessage(`Error during search: ${error}`, 'Error', undefined);
+			}
+		}
+	}
+
+	async chat(userInput: string): Promise<void> {
+		// Reset interrupt flag at the start of a new chat
+		this.isInterrupted = false;
+
+		// Check API key on first message send
+		await this.initializeClient();
 
 		// Add user message
 		this.messages.push({role: 'user', content: userInput});
@@ -336,8 +376,8 @@ When asked about your identity, you should identify yourself as a coding assista
 					debugLog('Messages count:', this.messages.length);
 					debugLog('Last few messages:', this.messages.slice(-3));
 
-					// Prepare request body
-					const requestBody: any = {
+					// Prepare request body for curl logging
+					const requestBody = {
 						model: this.model,
 						messages: this.messages,
 						tools: ALL_TOOL_SCHEMAS,
@@ -346,55 +386,6 @@ When asked about your identity, you should identify yourself as a coding assista
 						max_tokens: 8000,
 						stream: false as const,
 					};
-
-					// Handle web search settings
-					if (this.webSearchSettings.enabled) {
-						debugLog('Web search is enabled');
-						const searchProvider =
-							this.webSearchSettings.provider || this.provider;
-
-						if (searchProvider === 'groq') {
-							requestBody.search_settings = this.webSearchSettings.settings;
-							debugLog(
-								'Groq search settings added:',
-								requestBody.search_settings,
-							);
-						} else if (searchProvider === 'openrouter') {
-							// Add :online suffix to model if not already present
-							if (!requestBody.model.endsWith(':online')) {
-								requestBody.model += ':online';
-							}
-							if (this.webSearchSettings.settings) {
-								// Handle other OpenRouter search settings if provided
-								if (this.webSearchSettings.settings.search_context_size) {
-									requestBody.web_search_options = {
-										search_context_size:
-											this.webSearchSettings.settings.search_context_size,
-									};
-								}
-								if (
-									this.webSearchSettings.settings.max_results ||
-									this.webSearchSettings.settings.search_prompt
-								) {
-									requestBody.plugins = [
-										{
-											id: 'web',
-											max_results: this.webSearchSettings.settings.max_results,
-											search_prompt:
-												this.webSearchSettings.settings.search_prompt,
-										},
-									];
-								}
-							}
-							debugLog(
-								'OpenRouter web search enabled for model:',
-								requestBody.model,
-							);
-						}
-
-						// Reset web search for the next turn
-						this.webSearchSettings.enabled = false;
-					}
 
 					// Log equivalent curl command
 					this.requestCount++;
@@ -436,11 +427,8 @@ When asked about your identity, you should identify yourself as a coding assista
 
 					const message = response.choices[0].message;
 
-					// Extract reasoning and search results if present
+					// Extract reasoning if present
 					const reasoning = (message as any).reasoning;
-					const searchResults =
-						(message as any).executed_tools?.[0]?.search_results ||
-						(message as any).annotations;
 
 					// Pass usage data to callback if available
 					if (response.usage && this.onApiUsage) {
@@ -472,11 +460,7 @@ When asked about your identity, you should identify yourself as a coding assista
 						// Show thinking text or reasoning if present
 						if (message.content || reasoning) {
 							if (this.onThinkingText) {
-								this.onThinkingText(
-									message.content || '',
-									reasoning,
-									searchResults,
-								);
+								this.onThinkingText(message.content || '', reasoning, undefined);
 							}
 						}
 
@@ -530,7 +514,7 @@ When asked about your identity, you should identify yourself as a coding assista
 
 					if (this.onFinalMessage) {
 						debugLog('Calling onFinalMessage callback');
-						this.onFinalMessage(content, reasoning, searchResults);
+						this.onFinalMessage(content, reasoning, undefined);
 					} else {
 						debugLog('No onFinalMessage callback set');
 					}
