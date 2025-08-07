@@ -22,24 +22,21 @@ export function getCommandNames(): string[] {
 }
 
 export function handleSlashCommand(command: string, context: CommandContext) {
-	// Extract the command part, everything up to the first space or end of string
-	const fullCommand = command.slice(1);
-	const spaceIndex = fullCommand.indexOf(' ');
-	const cmd =
-		spaceIndex > -1
-			? fullCommand.substring(0, spaceIndex).toLowerCase()
-			: fullCommand.toLowerCase();
-
-	const commandDef = getAvailableCommands().find(c => c.command === cmd);
+	const commandDef = getAvailableCommands().find(c => c.command === command);
 
 	// Add user message for the command
 	context.addMessage({
 		role: 'user',
-		content: command,
+		content: `/${command} ${context.args.join(' ')}`,
 	});
 
 	if (commandDef) {
 		commandDef.handler(context);
+	} else {
+		context.addMessage({
+			role: 'system',
+			content: `Unknown command: /${command}`,
+		});
 	}
 }
 

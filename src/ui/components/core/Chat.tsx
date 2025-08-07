@@ -11,7 +11,7 @@ import Login from '../input-overlays/Login.js';
 import ModelSelector from '../input-overlays/ModelSelector.js';
 import MaxIterationsContinue from '../input-overlays/MaxIterationsContinue.js';
 import {handleSlashCommand} from '../../../commands/index.js';
-import { LoginProvider } from '../../../commands/base.js';
+import {LoginProvider} from '../../../commands/base.js';
 
 interface ChatProps {
 	agent: Agent;
@@ -105,8 +105,9 @@ export default function Chat({agent}: ChatProps) {
 
 			// Handle slash commands
 			if (message.startsWith('/')) {
-				handleSlashCommand(message.substring(1), {
-					args: message.substring(1).split(' ').slice(1),
+				const [command, ...args] = message.substring(1).split(' ');
+				handleSlashCommand(command, {
+					args,
 					addMessage,
 					clearHistory,
 					setShowLogin,
