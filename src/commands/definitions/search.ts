@@ -28,7 +28,7 @@ const searchCommandHandler = (context: CommandContext) => {
 		content: `Searching for: "${query}"...`,
 	});
 
-	// agent.search(query);
+	agent.search(query);
 };
 
 export const searchCommand: CommandDefinition = {
