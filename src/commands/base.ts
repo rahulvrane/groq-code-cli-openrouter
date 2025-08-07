@@ -1,6 +1,9 @@
+import {Agent} from '../core/agent.js';
+
 export type LoginProvider = 'groq' | 'openrouter';
 
 export interface CommandContext {
+	agent?: Agent;
 	args: string[];
 	addMessage: (message: any) => void;
 	clearHistory: () => void;

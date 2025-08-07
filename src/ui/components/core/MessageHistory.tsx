@@ -52,6 +52,33 @@ export default function MessageHistory({
 				const markdownElements = parseMarkdown(message.content);
 				return (
 					<Box key={message.id} marginBottom={1} flexDirection="column">
+						{/* Render search results if present */}
+						{message.searchResults && (
+							<Box
+								flexDirection="column"
+								borderStyle="round"
+								borderColor="gray"
+								paddingX={1}
+								marginBottom={1}
+							>
+								<Text bold>Search Results:</Text>
+								{message.searchResults.map((result: any, index: number) => {
+									const title = result.url_citation
+										? result.url_citation.title
+										: result.title;
+									const url = result.url_citation
+										? result.url_citation.url
+										: result.url;
+									return (
+										<Box key={index} flexDirection="column" marginY={1}>
+											<Text color="blue">{`${index + 1}. ${title}`}</Text>
+											<Text dimColor>{url}</Text>
+										</Box>
+									);
+								})}
+							</Box>
+						)}
+
 						{/* Render reasoning if present and showReasoning is enabled */}
 						{message.reasoning && showReasoning && (
 							<Box marginBottom={1}>

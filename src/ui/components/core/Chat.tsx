@@ -107,6 +107,7 @@ export default function Chat({agent}: ChatProps) {
 			if (message.startsWith('/')) {
 				const [command, ...args] = message.substring(1).split(' ');
 				handleSlashCommand(command, {
+					agent,
 					args,
 					addMessage,
 					clearHistory,

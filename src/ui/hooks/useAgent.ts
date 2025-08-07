@@ -10,6 +10,7 @@ export interface ChatMessage {
 	role: 'user' | 'assistant' | 'system' | 'tool' | 'tool_execution';
 	content: string;
 	reasoning?: string;
+	searchResults?: any;
 	timestamp: Date;
 	toolExecution?: ToolExecution;
 }
@@ -107,20 +108,30 @@ export function useAgent(
 			try {
 				// Set up tool execution callbacks
 				agent.setToolCallbacks({
-					onThinkingText: (content: string, reasoning?: string) => {
+					onThinkingText: (
+						content: string,
+						reasoning?: string,
+						searchResults?: any,
+					) => {
 						// Add thinking text as assistant message when model uses tools
 						addMessage({
 							role: 'assistant',
 							content: content,
 							reasoning: reasoning,
+							searchResults: searchResults,
 						});
 					},
-					onFinalMessage: (content: string, reasoning?: string) => {
+					onFinalMessage: (
+						content: string,
+						reasoning?: string,
+						searchResults?: any,
+					) => {
 						// Add final assistant message when no tools are used
 						addMessage({
 							role: 'assistant',
 							content: content,
 							reasoning: reasoning,
+							searchResults: searchResults,
 						});
 					},
 					onToolStart: (name: string, args: Record<string, any>) => {

@@ -20,6 +20,14 @@ interface Message {
 	tool_call_id?: string;
 }
 
+interface WebSearchSettings {
+	enabled: boolean;
+	provider?: 'groq' | 'openrouter';
+	settings?: {
+		[key: string]: any;
+	};
+}
+
 const GROQ_MODELS = [
 	'moonshotai/kimi-k2-instruct',
 	'openai/gpt-oss-120b',
@@ -27,6 +35,8 @@ const GROQ_MODELS = [
 	'qwen/qwen3-32b',
 	'meta-llama/llama-4-maverick-17b-128e-instruct',
 	'meta-llama/llama-4-scout-17b-16e-instruct',
+	'compound-beta',
+	'compound-beta-mini',
 ];
 
 function getProviderForModel(modelId: string): 'groq' | 'openrouter' {
@@ -43,14 +53,23 @@ export class Agent {
 	private sessionAutoApprove: boolean = false;
 	private systemMessage: string;
 	private configManager: ConfigManager;
+	private webSearchSettings: WebSearchSettings = {enabled: false};
 	private onToolStart?: (name: string, args: Record<string, any>) => void;
 	private onToolEnd?: (name: string, result: any) => void;
 	private onToolApproval?: (
 		toolName: string,
 		toolArgs: Record<string, any>,
 	) => Promise<{approved: boolean; autoApproveSession?: boolean}>;
-	private onThinkingText?: (content: string, reasoning?: string) => void;
-	private onFinalMessage?: (content: string, reasoning?: string) => void;
+	private onThinkingText?: (
+		content: string,
+		reasoning?: string,
+		searchResults?: any,
+	) => void;
+	private onFinalMessage?: (
+		content: string,
+		reasoning?: string,
+		searchResults?: any,
+	) => void;
 	private onMaxIterations?: (maxIterations: number) => Promise<boolean>;
 	private onApiUsage?: (usage: {
 		prompt_tokens: number;
@@ -243,6 +262,10 @@ When asked about your identity, you should identify yourself as a coding assista
 		this.sessionAutoApprove = enabled;
 	}
 
+	public setWebSearch(settings: WebSearchSettings): void {
+		this.webSearchSettings = settings;
+	}
+
 	public interrupt(): void {
 		debugLog('Interrupting current request');
 		this.isInterrupted = true;
@@ -313,8 +336,8 @@ When asked about your identity, you should identify yourself as a coding assista
 					debugLog('Messages count:', this.messages.length);
 					debugLog('Last few messages:', this.messages.slice(-3));
 
-					// Prepare request body for curl logging
-					const requestBody = {
+					// Prepare request body
+					const requestBody: any = {
 						model: this.model,
 						messages: this.messages,
 						tools: ALL_TOOL_SCHEMAS,
@@ -323,6 +346,55 @@ When asked about your identity, you should identify yourself as a coding assista
 						max_tokens: 8000,
 						stream: false as const,
 					};
+
+					// Handle web search settings
+					if (this.webSearchSettings.enabled) {
+						debugLog('Web search is enabled');
+						const searchProvider =
+							this.webSearchSettings.provider || this.provider;
+
+						if (searchProvider === 'groq') {
+							requestBody.search_settings = this.webSearchSettings.settings;
+							debugLog(
+								'Groq search settings added:',
+								requestBody.search_settings,
+							);
+						} else if (searchProvider === 'openrouter') {
+							// Add :online suffix to model if not already present
+							if (!requestBody.model.endsWith(':online')) {
+								requestBody.model += ':online';
+							}
+							if (this.webSearchSettings.settings) {
+								// Handle other OpenRouter search settings if provided
+								if (this.webSearchSettings.settings.search_context_size) {
+									requestBody.web_search_options = {
+										search_context_size:
+											this.webSearchSettings.settings.search_context_size,
+									};
+								}
+								if (
+									this.webSearchSettings.settings.max_results ||
+									this.webSearchSettings.settings.search_prompt
+								) {
+									requestBody.plugins = [
+										{
+											id: 'web',
+											max_results: this.webSearchSettings.settings.max_results,
+											search_prompt:
+												this.webSearchSettings.settings.search_prompt,
+										},
+									];
+								}
+							}
+							debugLog(
+								'OpenRouter web search enabled for model:',
+								requestBody.model,
+							);
+						}
+
+						// Reset web search for the next turn
+						this.webSearchSettings.enabled = false;
+					}
 
 					// Log equivalent curl command
 					this.requestCount++;
@@ -364,8 +436,11 @@ When asked about your identity, you should identify yourself as a coding assista
 
 					const message = response.choices[0].message;
 
-					// Extract reasoning if present
+					// Extract reasoning and search results if present
 					const reasoning = (message as any).reasoning;
+					const searchResults =
+						(message as any).executed_tools?.[0]?.search_results ||
+						(message as any).annotations;
 
 					// Pass usage data to callback if available
 					if (response.usage && this.onApiUsage) {
@@ -397,7 +472,11 @@ When asked about your identity, you should identify yourself as a coding assista
 						// Show thinking text or reasoning if present
 						if (message.content || reasoning) {
 							if (this.onThinkingText) {
-								this.onThinkingText(message.content || '', reasoning);
+								this.onThinkingText(
+									message.content || '',
+									reasoning,
+									searchResults,
+								);
 							}
 						}
 
@@ -451,7 +530,7 @@ When asked about your identity, you should identify yourself as a coding assista
 
 					if (this.onFinalMessage) {
 						debugLog('Calling onFinalMessage callback');
-						this.onFinalMessage(content, reasoning);
+						this.onFinalMessage(content, reasoning, searchResults);
 					} else {
 						debugLog('No onFinalMessage callback set');
 					}
