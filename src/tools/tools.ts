@@ -4,6 +4,7 @@ import {exec} from 'child_process';
 import {promisify} from 'util';
 import {writeFile, createDirectory, displayTree} from '../utils/file-ops.js';
 import {setReadFilesTracker} from './validators.js';
+import {Agent} from '../core/agent.js';
 
 const execAsync = promisify(exec);
 
@@ -67,6 +68,7 @@ export function formatToolParams(
 		execute_command: ['command'],
 		create_tasks: [],
 		update_tasks: [],
+		web_search: ['query'],
 	};
 
 	const keyParams = paramMappings[toolName] || [];
@@ -1051,6 +1053,14 @@ export async function updateTasks(
 	}
 }
 
+// Wrapper for web_search to be included in the registry
+async function webSearch(query: string, agent: Agent): Promise<any> {
+	if (!agent || typeof agent.search !== 'function') {
+		return createToolResponse(false, undefined, '', 'Error: Agent not available for search');
+	}
+	return agent.search(query);
+}
+
 // Tool Registry: maps tool names to functions
 export const TOOL_REGISTRY = {
 	read_file: readFile,
@@ -1062,6 +1072,7 @@ export const TOOL_REGISTRY = {
 	execute_command: executeCommand,
 	create_tasks: createTasks,
 	update_tasks: updateTasks,
+	web_search: webSearch,
 };
 
 /**
@@ -1070,6 +1081,7 @@ export const TOOL_REGISTRY = {
 export async function executeTool(
 	toolName: string,
 	toolArgs: Record<string, any>,
+	agent?: Agent,
 ): Promise<ToolResult> {
 	if (!(toolName in TOOL_REGISTRY)) {
 		return createToolResponse(false, undefined, '', 'Error: Unknown tool');
@@ -1134,6 +1146,11 @@ export async function executeTool(
 				return await toolFunction(toolArgs.user_query, toolArgs.tasks);
 			case 'update_tasks':
 				return await toolFunction(toolArgs.task_updates);
+			case 'web_search':
+				if (!agent) {
+					return createToolResponse(false, undefined, '', 'Error: Agent instance not provided for web_search');
+				}
+				return await toolFunction(toolArgs.query, agent);
 			default:
 				return createToolResponse(
 					false,

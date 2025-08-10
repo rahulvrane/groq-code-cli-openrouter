@@ -36,12 +36,12 @@ function getProviderForModel(modelId: string): 'groq' | 'openrouter' {
 }
 
 export class Agent {
-	private client: OpenAI | null = null;
+	public client: OpenAI | null = null;
 	private messages: Message[] = [];
-	private apiKey: string | null = null;
-	private model: string;
-	private provider: 'groq' | 'openrouter';
-	private temperature: number;
+	public apiKey: string | null = null;
+	public model: string;
+	public provider: 'groq' | 'openrouter';
+	public temperature: number;
 	private sessionAutoApprove: boolean = false;
 	private systemMessage: string;
 	private configManager: ConfigManager;
@@ -51,16 +51,8 @@ export class Agent {
 		toolName: string,
 		toolArgs: Record<string, any>,
 	) => Promise<{approved: boolean; autoApproveSession?: boolean}>;
-	private onThinkingText?: (
-		content: string,
-		reasoning?: string,
-		searchResults?: any,
-	) => void;
-	private onFinalMessage?: (
-		content: string,
-		reasoning?: string,
-		searchResults?: any,
-	) => void;
+	private onThinkingText?: (content: string, reasoning?: string) => void;
+	private onFinalMessage?: (content: string, reasoning?: string) => void;
 	private onMaxIterations?: (maxIterations: number) => Promise<boolean>;
 	private onApiUsage?: (usage: {
 		prompt_tokens: number;
@@ -123,7 +115,7 @@ Use tools to:
 - Read and understand files (read_file, list_files, search_files)
 - Create, edit, and manage files (create_file, edit_file, list_files, read_file, delete_file)
 - Execute commands (execute_command)
-- Search for information (search_files)
+- Search for information (search_files, web_search)
 - Help you understand the codebase before answering the user's question
 
 IMPLEMENTATION TASK RULES:
@@ -176,16 +168,8 @@ When asked about your identity, you should identify yourself as a coding assista
 			toolName: string,
 			toolArgs: Record<string, any>,
 		) => Promise<{approved: boolean; autoApproveSession?: boolean}>;
-		onThinkingText?: (
-			content: string,
-			reasoning?: string,
-			searchResults?: any,
-		) => void;
-		onFinalMessage?: (
-			content: string,
-			reasoning?: string,
-			searchResults?: any,
-		) => void;
+		onThinkingText?: (content: string, reasoning?: string) => void;
+		onFinalMessage?: (content: string, reasoning?: string) => void;
 		onMaxIterations?: (maxIterations: number) => Promise<boolean>;
 		onApiUsage?: (usage: {
 			prompt_tokens: number;
@@ -302,7 +286,7 @@ When asked about your identity, you should identify yourself as a coding assista
 		}
 	}
 
-	public async search(query: string): Promise<void> {
+	public async search(query: string): Promise<any> {
 		await this.initializeClient();
 
 		const requestBody: any = {
@@ -328,18 +312,20 @@ When asked about your identity, you should identify yourself as a coding assista
 		try {
 			const response = await this.client!.chat.completions.create(requestBody);
 			const message = response.choices[0].message;
-			const reasoning = (message as any).reasoning;
 			const searchResults =
 				(message as any).executed_tools?.[0]?.search_results ||
 				(message as any).annotations;
 
-			if (this.onFinalMessage) {
-				this.onFinalMessage(message.content || '', reasoning, searchResults);
-			}
+			return {
+				success: true,
+				content: message.content || '',
+				searchResults: searchResults,
+			};
 		} catch (error) {
-			if (this.onFinalMessage) {
-				this.onFinalMessage(`Error during search: ${error}`, 'Error', undefined);
-			}
+			return {
+				success: false,
+				error: `Error during search: ${error}`,
+			};
 		}
 	}
 
@@ -460,7 +446,7 @@ When asked about your identity, you should identify yourself as a coding assista
 						// Show thinking text or reasoning if present
 						if (message.content || reasoning) {
 							if (this.onThinkingText) {
-								this.onThinkingText(message.content || '', reasoning, undefined);
+								this.onThinkingText(message.content || '', reasoning);
 							}
 						}
 
@@ -514,7 +500,7 @@ When asked about your identity, you should identify yourself as a coding assista
 
 					if (this.onFinalMessage) {
 						debugLog('Calling onFinalMessage callback');
-						this.onFinalMessage(content, reasoning, undefined);
+						this.onFinalMessage(content, reasoning);
 					} else {
 						debugLog('No onFinalMessage callback set');
 					}
@@ -714,7 +700,7 @@ When asked about your identity, you should identify yourself as a coding assista
 			}
 
 			// Execute tool
-			const result = await executeTool(toolName, toolArgs);
+			const result = await executeTool(toolName, toolArgs, this);
 
 			// Notify UI about tool completion
 			if (this.onToolEnd) {

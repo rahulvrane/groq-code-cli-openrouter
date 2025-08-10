@@ -380,6 +380,25 @@ export const UPDATE_TASKS_SCHEMA: ToolSchema = {
 	},
 };
 
+export const WEB_SEARCH_SCHEMA: ToolSchema = {
+	type: 'function',
+	function: {
+		name: 'web_search',
+		description:
+			'Search the web for up-to-date information. Use when the user asks for recent events, news, or information that might not be in your training data. Example: {"query": "latest AI trends"}',
+		parameters: {
+			type: 'object',
+			properties: {
+				query: {
+					type: 'string',
+					description: 'The search query.',
+				},
+			},
+			required: ['query'],
+		},
+	},
+};
+
 // All tools combined
 export const ALL_TOOL_SCHEMAS = [
 	READ_FILE_SCHEMA,
@@ -391,6 +410,7 @@ export const ALL_TOOL_SCHEMAS = [
 	CREATE_TASKS_SCHEMA,
 	UPDATE_TASKS_SCHEMA,
 	EXECUTE_COMMAND_SCHEMA,
+	WEB_SEARCH_SCHEMA,
 ];
 
 // Safe tools that can be auto-executed without approval
@@ -400,6 +420,7 @@ export const SAFE_TOOLS = [
 	'search_files',
 	'create_tasks',
 	'update_tasks',
+	'web_search',
 ];
 
 // Tools that require approval, unless auto-approval is enabled
