@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {Box, Text, useInput, useApp} from 'ink';
 import {Agent} from '../../../core/agent.js';
 import {useAgent} from '../../hooks/useAgent.js';
@@ -51,6 +51,7 @@ export default function Chat({agent}: ChatProps) {
 		pendingMaxIterations,
 		sessionAutoApprove,
 		showReasoning,
+		isCodesignMode,
 		sendMessage,
 		approveToolExecution,
 		respondToMaxIterations,
@@ -58,6 +59,7 @@ export default function Chat({agent}: ChatProps) {
 		clearHistory,
 		toggleAutoApprove,
 		toggleReasoning,
+		toggleCodesignMode,
 		interruptRequest,
 	} = agentHook;
 
@@ -67,6 +69,7 @@ export default function Chat({agent}: ChatProps) {
 	const [showLogin, setShowLogin] = useState(false);
 	const [loginProvider, setLoginProvider] = useState<LoginProvider>('groq');
 	const [showModelSelector, setShowModelSelector] = useState(false);
+	const lastShiftTabPress = useRef(0);
 
 	// Handle global keyboard shortcuts
 	useInput((input, key) => {
@@ -74,7 +77,13 @@ export default function Chat({agent}: ChatProps) {
 			exit();
 		}
 		if (key.shift && key.tab) {
-			toggleAutoApprove();
+			const now = Date.now();
+			if (now - lastShiftTabPress.current < 500) {
+				toggleCodesignMode();
+				lastShiftTabPress.current = 0; // Reset after double press
+			} else {
+				lastShiftTabPress.current = now;
+			}
 		}
 		if (key.escape) {
 			// If waiting for tool approval, reject the tool
@@ -239,6 +248,12 @@ export default function Chat({agent}: ChatProps) {
 					<Text color="cyan" bold>
 						{sessionAutoApprove ? 'auto-approve edits is on' : ''}
 					</Text>
+					{isCodesignMode && (
+						<Text color="magenta" bold>
+							{' '}
+							CODESIGN MODE
+						</Text>
+					)}
 				</Box>
 				<Box>
 					<Text color="gray" dimColor>

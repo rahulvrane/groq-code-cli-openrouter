@@ -35,9 +35,15 @@ function getProviderForModel(modelId: string): 'groq' | 'openrouter' {
 	return GROQ_MODELS.includes(modelId) ? 'groq' : 'openrouter';
 }
 
+interface PlanningSession {
+	filePath: string;
+	active: boolean;
+}
+
 export class Agent {
 	public client: OpenAI | null = null;
 	private messages: Message[] = [];
+	private planningSession: PlanningSession | null = null;
 	public apiKey: string | null = null;
 	public model: string;
 	public provider: 'groq' | 'openrouter';
@@ -329,7 +335,134 @@ When asked about your identity, you should identify yourself as a coding assista
 		}
 	}
 
-	async chat(userInput: string): Promise<void> {
+	private async plan(userInput: string): Promise<void> {
+		// 1. Research
+		const searchResult = await this.search(
+			`Create a step-by-step plan to ${userInput}. Use web search to find the latest information and best practices.`,
+		);
+
+		if (!searchResult.success) {
+			if (this.onFinalMessage) {
+				this.onFinalMessage(`Planning failed during research: ${searchResult.error}`);
+			}
+			return;
+		}
+
+		// 2. Generate plan
+		const planPrompt = `Based on the following research, create a detailed, step-by-step plan to ${userInput}.
+
+Research:
+${searchResult.content}
+
+The plan should be formatted as a markdown list.`;
+
+		try {
+			const response = await this.client!.chat.completions.create({
+				model: this.model,
+				messages: [{role: 'user', content: planPrompt}],
+				temperature: this.temperature,
+				max_tokens: 8000,
+				stream: false,
+			});
+
+			const planContent = response.choices[0].message.content || '';
+
+			// 3. Save plan to file
+			const planDir = path.join(process.cwd(), '.groq', 'plans');
+			await fs.promises.mkdir(planDir, {recursive: true});
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const planFilePath = path.join(planDir, `${timestamp}.md`);
+			await fs.promises.writeFile(planFilePath, planContent);
+
+			this.planningSession = {
+				filePath: planFilePath,
+				active: true,
+			};
+
+			if (this.onFinalMessage) {
+				this.onFinalMessage(planContent, `Plan generated and saved to ${planFilePath}. You can now provide feedback to refine it.`);
+			}
+
+		} catch (error) {
+			if (this.onFinalMessage) {
+				this.onFinalMessage(`Error during planning: ${error}`, 'Error');
+			}
+		}
+	}
+
+	private async refinePlan(feedback: string): Promise<void> {
+		if (!this.planningSession) {
+			return;
+		}
+
+		const currentPlan = await fs.promises.readFile(this.planningSession.filePath, 'utf-8');
+
+		const refinementPrompt = `Based on the following feedback, please refine the plan.
+
+Current Plan:
+${currentPlan}
+
+User Feedback:
+${feedback}
+
+The refined plan should be formatted as a markdown list.`;
+
+		try {
+			const response = await this.client!.chat.completions.create({
+				model: this.model,
+				messages: [{role: 'user', content: refinementPrompt}],
+				temperature: this.temperature,
+				max_tokens: 8000,
+				stream: false,
+			});
+
+			const newPlanContent = response.choices[0].message.content || '';
+			await fs.promises.writeFile(this.planningSession.filePath, newPlanContent);
+
+			if (this.onFinalMessage) {
+				this.onFinalMessage(newPlanContent, 'Plan updated.');
+			}
+		} catch (error) {
+			if (this.onFinalMessage) {
+				this.onFinalMessage(`Error refining plan: ${error}`, 'Error');
+			}
+		}
+	}
+
+	public async executePlan(): Promise<void> {
+		if (!this.planningSession) {
+			if (this.onFinalMessage) {
+				this.onFinalMessage('No active plan to execute.', 'Error');
+			}
+			return;
+		}
+
+		const planContent = await fs.promises.readFile(
+			this.planningSession.filePath,
+			'utf-8',
+		);
+		this.planningSession.active = false;
+
+		if (this.onFinalMessage) {
+			this.onFinalMessage(`Executing plan:\n${planContent}`);
+		}
+
+		await this.chat(
+			`Please execute the following plan:\n\n${planContent}`,
+			false,
+		);
+	}
+
+	async chat(userInput: string, isCodesignMode: boolean = false): Promise<void> {
+		if (this.planningSession?.active) {
+			await this.refinePlan(userInput);
+			return;
+		}
+
+		if (isCodesignMode) {
+			await this.plan(userInput);
+			return;
+		}
 		// Reset interrupt flag at the start of a new chat
 		this.isInterrupted = false;
 

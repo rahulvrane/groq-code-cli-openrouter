@@ -49,6 +49,7 @@ export function useAgent(
 		useState<ToolExecution | null>(null);
 	const [sessionAutoApprove, setSessionAutoApprove] = useState(false);
 	const [showReasoning, setShowReasoning] = useState(true);
+	const [isCodesignMode, setIsCodesignMode] = useState(false);
 	const currentExecutionIdRef = useRef<string | null>(null);
 	const [pendingApproval, setPendingApproval] = useState<{
 		toolName: string;
@@ -288,7 +289,7 @@ export function useAgent(
 					},
 				});
 
-				await agent.chat(userInput);
+				await agent.chat(userInput, isCodesignMode);
 			} catch (error) {
 				// Don't show abort errors - user interruption message is already shown
 				if (
@@ -398,6 +399,10 @@ export function useAgent(
 		setShowReasoning(prev => !prev);
 	}, []);
 
+	const toggleCodesignMode = useCallback(() => {
+		setIsCodesignMode(prev => !prev);
+	}, []);
+
 	return {
 		messages,
 		userMessageHistory,
@@ -407,6 +412,7 @@ export function useAgent(
 		pendingMaxIterations,
 		sessionAutoApprove,
 		showReasoning,
+		isCodesignMode,
 		sendMessage,
 		approveToolExecution,
 		respondToMaxIterations,
@@ -414,6 +420,7 @@ export function useAgent(
 		clearHistory,
 		toggleAutoApprove,
 		toggleReasoning,
+		toggleCodesignMode,
 		interruptRequest,
 	};
 }
