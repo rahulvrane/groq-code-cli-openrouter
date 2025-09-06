@@ -3,151 +3,175 @@ import * as path from 'path';
 import * as os from 'os';
 
 interface Config {
-  groqApiKey?: string;
-  defaultModel?: string;
-  groqProxy?: string;
+	groqApiKey?: string;
+	openRouterApiKey?: string;
+	defaultModel?: string;
 }
 
 const CONFIG_DIR = '.groq'; // In home directory
 const CONFIG_FILE = 'local-settings.json';
 
 export class ConfigManager {
-  private configPath: string;
+	private configPath: string;
 
-  constructor() {
-    const homeDir = os.homedir();
-    this.configPath = path.join(homeDir, CONFIG_DIR, CONFIG_FILE);
-  }
+	constructor() {
+		const homeDir = os.homedir();
+		this.configPath = path.join(homeDir, CONFIG_DIR, CONFIG_FILE);
+	}
 
-  private ensureConfigDir(): void {
-    const configDir = path.dirname(this.configPath);
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true });
-    }
-  }
+	private ensureConfigDir(): void {
+		const configDir = path.dirname(this.configPath);
+		if (!fs.existsSync(configDir)) {
+			fs.mkdirSync(configDir, {recursive: true});
+		}
+	}
 
-  private readConfig(): Config {
-    try {
-      if (!fs.existsSync(this.configPath)) {
-        return {};
-      }
-      const configData = fs.readFileSync(this.configPath, 'utf8');
-      return JSON.parse(configData);
-    } catch (error) {
-      console.warn('Failed to read config file:', error);
-      return {};
-    }
-  }
+	public getApiKey(): string | null {
+		try {
+			if (!fs.existsSync(this.configPath)) {
+				return null;
+			}
 
-  private writeConfig(config: Config): void {
-    this.ensureConfigDir();
-    fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), {
-      mode: 0o600 // Read/write for owner only
-    });
-    // Ensure restrictive perms even if file already existed
-    try {
-      fs.chmodSync(this.configPath, 0o600);
-    } catch {
-      // noop (esp. on Windows where chmod may not be supported)
-    }
-  }
+			const configData = fs.readFileSync(this.configPath, 'utf8');
+			const config: Config = JSON.parse(configData);
+			return config.groqApiKey || null;
+		} catch (error) {
+			console.warn('Failed to read config file:', error);
+			return null;
+		}
+	}
 
-  public getApiKey(): string | null {
-    const config = this.readConfig();
-    return config.groqApiKey || null;
-  }
+	public setApiKey(apiKey: string): void {
+		try {
+			this.ensureConfigDir();
 
-  public setApiKey(apiKey: string): void {
-    try {
-      const config = this.readConfig();
-      config.groqApiKey = apiKey;
-      this.writeConfig(config);
-    } catch (error) {
-      throw new Error(`Failed to save API key: ${error}`);
-    }
-  }
+			let config: Config = {};
+			if (fs.existsSync(this.configPath)) {
+				const configData = fs.readFileSync(this.configPath, 'utf8');
+				config = JSON.parse(configData);
+			}
 
-  public clearApiKey(): void {
-    try {
-      const config = this.readConfig();
-      delete config.groqApiKey;
+			config.groqApiKey = apiKey;
 
-      if (Object.keys(config).length === 0) {
-        if (fs.existsSync(this.configPath)) {
-          fs.unlinkSync(this.configPath);
-        }
-      } else {
-        this.writeConfig(config);
-      }
-    } catch (error) {
-      console.warn('Failed to clear API key:', error);
-    }
-  }
+			fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), {
+				mode: 0o600, // Read/write for owner only
+			});
+		} catch (error) {
+			throw new Error(`Failed to save API key: ${error}`);
+		}
+	}
 
-  public getDefaultModel(): string | null {
-    const config = this.readConfig();
-    return config.defaultModel || null;
-  }
+	public clearApiKey(): void {
+		try {
+			if (!fs.existsSync(this.configPath)) {
+				return;
+			}
 
-  public setDefaultModel(model: string): void {
-    try {
-      const config = this.readConfig();
-      config.defaultModel = model;
-      this.writeConfig(config);
-    } catch (error) {
-      throw new Error(`Failed to save default model: ${error}`);
-    }
-  }
+			const configData = fs.readFileSync(this.configPath, 'utf8');
+			const config: Config = JSON.parse(configData);
+			delete config.groqApiKey;
 
-  public getProxy(): string | null {
-    const config = this.readConfig();
-    return config.groqProxy || null;
-  }
+			if (Object.keys(config).length === 0) {
+				fs.unlinkSync(this.configPath);
+			} else {
+				fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), {
+					mode: 0o600,
+				});
+			}
+		} catch (error) {
+			console.warn('Failed to clear API key:', error);
+		}
+	}
 
-  public setProxy(proxy: string): void {
-    try {
-      // Validate proxy input
-      const trimmed = proxy?.trim?.() ?? '';
-      if (!trimmed) {
-        throw new Error('Proxy must be a non-empty string');
-      }
-      
-      // Validate URL format and protocol
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(trimmed);
-      } catch {
-        throw new Error(`Invalid proxy URL: ${trimmed}`);
-      }
-      
-      const allowedProtocols = new Set(['http:', 'https:', 'socks:', 'socks4:', 'socks5:']);
-      if (!allowedProtocols.has(parsedUrl.protocol)) {
-        throw new Error(`Unsupported proxy protocol: ${parsedUrl.protocol}`);
-      }
-      
-      const config = this.readConfig();
-      config.groqProxy = trimmed;
-      this.writeConfig(config);
-    } catch (error) {
-      // Preserve original error via cause for better debugging
-      throw new Error(`Failed to save proxy: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+	public getOpenRouterApiKey(): string | null {
+		try {
+			if (!fs.existsSync(this.configPath)) {
+				return null;
+			}
 
-  public clearProxy(): void {
-    try {
-      const config = this.readConfig();
-      delete config.groqProxy;
+			const configData = fs.readFileSync(this.configPath, 'utf8');
+			const config: Config = JSON.parse(configData);
+			return config.openRouterApiKey || null;
+		} catch (error) {
+			console.warn('Failed to read config file for OpenRouter API key:', error);
+			return null;
+		}
+	}
 
-      if (Object.keys(config).length === 0) {
-        if (fs.existsSync(this.configPath)) {
-          fs.unlinkSync(this.configPath);
-        }
-      } else {
-        this.writeConfig(config);
-      }
-    } catch (error) {
-      console.warn('Failed to clear proxy:', error);
-    }
-  }
+	public setOpenRouterApiKey(apiKey: string): void {
+		try {
+			this.ensureConfigDir();
+
+			let config: Config = {};
+			if (fs.existsSync(this.configPath)) {
+				const configData = fs.readFileSync(this.configPath, 'utf8');
+				config = JSON.parse(configData);
+			}
+
+			config.openRouterApiKey = apiKey;
+
+			fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), {
+				mode: 0o600, // Read/write for owner only
+			});
+		} catch (error) {
+			throw new Error(`Failed to save OpenRouter API key: ${error}`);
+		}
+	}
+
+	public clearOpenRouterApiKey(): void {
+		try {
+			if (!fs.existsSync(this.configPath)) {
+				return;
+			}
+
+			const configData = fs.readFileSync(this.configPath, 'utf8');
+			const config: Config = JSON.parse(configData);
+			delete config.openRouterApiKey;
+
+			if (Object.keys(config).length === 0) {
+				fs.unlinkSync(this.configPath);
+			} else {
+				fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), {
+					mode: 0o600,
+				});
+			}
+		} catch (error) {
+			console.warn('Failed to clear OpenRouter API key:', error);
+		}
+	}
+
+	public getDefaultModel(): string | null {
+		try {
+			if (!fs.existsSync(this.configPath)) {
+				return null;
+			}
+
+			const configData = fs.readFileSync(this.configPath, 'utf8');
+			const config: Config = JSON.parse(configData);
+			return config.defaultModel || null;
+		} catch (error) {
+			console.warn('Failed to read default model:', error);
+			return null;
+		}
+	}
+
+	public setDefaultModel(model: string): void {
+		try {
+			this.ensureConfigDir();
+
+			let config: Config = {};
+			if (fs.existsSync(this.configPath)) {
+				const configData = fs.readFileSync(this.configPath, 'utf8');
+				config = JSON.parse(configData);
+			}
+
+			config.defaultModel = model;
+
+			fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), {
+				mode: 0o600, // Read/write for owner only
+			});
+		} catch (error) {
+			throw new Error(`Failed to save default model: ${error}`);
+		}
+	}
 }

@@ -1,10 +1,6 @@
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { SocksProxyAgent } from 'socks-proxy-agent';
-import type { Agent } from 'http';
-import { ConfigManager } from './local-settings.js';
-
-// Module-level instance to avoid repeated instantiation
-const configManager = new ConfigManager();
+import {HttpsProxyAgent} from 'https-proxy-agent';
+import {SocksProxyAgent} from 'socks-proxy-agent';
+import type {Agent} from 'http';
 
 /**
  * Resolves the proxy URL to use from an explicit override, environment variables, or config file.
@@ -18,23 +14,18 @@ const configManager = new ConfigManager();
  * @returns The resolved proxy URL string, or `undefined` if no proxy is configured.
  */
 function getProxyUrl(proxyOverride?: string): string | undefined {
-  if (proxyOverride) {
-    return proxyOverride;
-  }
-  
-  // Check for proxy environment variables first (in order of priority)
-  // Check GROQ_PROXY first, then standard environment variables
-  const groqProxy = process.env.GROQ_PROXY;
-  const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
-  const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
-  
-  // Priority: GROQ_PROXY > HTTPS_PROXY > HTTP_PROXY > config file
-  if (groqProxy || httpsProxy || httpProxy) {
-    return groqProxy || httpsProxy || httpProxy;
-  }
-  
-  // If no environment variable, check config file
-  return configManager.getProxy() || undefined;
+	if (proxyOverride) {
+		return proxyOverride;
+	}
+
+	// Check for proxy environment variables first (in order of priority)
+	// Check GROQ_PROXY first, then standard environment variables
+	const groqProxy = process.env.GROQ_PROXY;
+	const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+	const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
+
+	// Priority: GROQ_PROXY > HTTPS_PROXY > HTTP_PROXY
+	return groqProxy || httpsProxy || httpProxy || undefined;
 }
 
 /**
@@ -46,10 +37,15 @@ function getProxyUrl(proxyOverride?: string): string | undefined {
  * @returns `'socks'` if the URL uses a SOCKS scheme, otherwise `'http'`.
  */
 function getProxyType(url: string): 'socks' | 'http' {
-  if (url.startsWith('socks://') || url.startsWith('socks5://') || url.startsWith('socks4://') || url.startsWith('socks4a://')) {
-    return 'socks';
-  }
-  return 'http';
+	if (
+		url.startsWith('socks://') ||
+		url.startsWith('socks5://') ||
+		url.startsWith('socks4://') ||
+		url.startsWith('socks4a://')
+	) {
+		return 'socks';
+	}
+	return 'http';
 }
 
 /**
@@ -65,18 +61,18 @@ function getProxyType(url: string): 'socks' | 'http' {
  * @returns A sanitized URL string suitable for logging or the original input when no sanitization is needed.
  */
 function sanitizeProxyUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    if (parsed.username || parsed.password) {
-      parsed.username = '';
-      parsed.password = '';
-      return parsed.toString();
-    }
-    return url;
-  } catch {
-    // If URL parsing fails, return a safe message
-    return url.includes('@') ? '[proxy with credentials]' : url;
-  }
+	try {
+		const parsed = new URL(url);
+		if (parsed.username || parsed.password) {
+			parsed.username = '';
+			parsed.password = '';
+			return parsed.toString();
+		}
+		return url;
+	} catch {
+		// If URL parsing fails, return a safe message
+		return url.includes('@') ? '[proxy with credentials]' : url;
+	}
 }
 
 /**
@@ -89,12 +85,12 @@ function sanitizeProxyUrl(url: string): string {
  * @returns True when `url` can be parsed as a valid URL; otherwise false.
  */
 function isValidProxyUrl(url: string): boolean {
-  try {
-    new URL(url);
-    return true;
-  } catch {
-    return false;
-  }
+	try {
+		new URL(url);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -106,28 +102,30 @@ function isValidProxyUrl(url: string): boolean {
  * @returns A Node `Agent` configured for the proxy, or `undefined` when no valid proxy is available or agent creation fails.
  */
 export function getProxyAgent(proxyOverride?: string): Agent | undefined {
-  const proxyUrl = getProxyUrl(proxyOverride);
-  
-  if (!proxyUrl) {
-    return undefined;
-  }
-  
-  if (!isValidProxyUrl(proxyUrl)) {
-    console.error(`Invalid proxy URL: ${sanitizeProxyUrl(proxyUrl)}`);
-    return undefined;
-  }
-  
-  try {
-    // Create appropriate agent based on proxy type
-    if (getProxyType(proxyUrl) === 'socks') {
-      return new SocksProxyAgent(proxyUrl);
-    } else {
-      return new HttpsProxyAgent(proxyUrl);
-    }
-  } catch (error) {
-    console.error(`Failed to create proxy agent: ${sanitizeProxyUrl(proxyUrl)}`);
-    return undefined;
-  }
+	const proxyUrl = getProxyUrl(proxyOverride);
+
+	if (!proxyUrl) {
+		return undefined;
+	}
+
+	if (!isValidProxyUrl(proxyUrl)) {
+		console.error(`Invalid proxy URL: ${sanitizeProxyUrl(proxyUrl)}`);
+		return undefined;
+	}
+
+	try {
+		// Create appropriate agent based on proxy type
+		if (getProxyType(proxyUrl) === 'socks') {
+			return new SocksProxyAgent(proxyUrl);
+		} else {
+			return new HttpsProxyAgent(proxyUrl);
+		}
+	} catch (error) {
+		console.error(
+			`Failed to create proxy agent: ${sanitizeProxyUrl(proxyUrl)}`,
+		);
+		return undefined;
+	}
 }
 
 /**
@@ -139,18 +137,22 @@ export function getProxyAgent(proxyOverride?: string): Agent | undefined {
  *
  * @param proxyOverride - Optional explicit proxy URL to use instead of environment variables.
  */
-export function getProxyInfo(proxyOverride?: string): { enabled: boolean; url?: string; type?: string } {
-  const proxyUrl = getProxyUrl(proxyOverride);
-  
-  if (!proxyUrl) {
-    return { enabled: false };
-  }
-  
-  const isValid = isValidProxyUrl(proxyUrl);
-  // Return info for debugging even if URL is invalid, but enabled reflects validity
-  return {
-    enabled: isValid,
-    url: sanitizeProxyUrl(proxyUrl),
-    type: getProxyType(proxyUrl)
-  };
+export function getProxyInfo(proxyOverride?: string): {
+	enabled: boolean;
+	url?: string;
+	type?: string;
+} {
+	const proxyUrl = getProxyUrl(proxyOverride);
+
+	if (!proxyUrl) {
+		return {enabled: false};
+	}
+
+	const isValid = isValidProxyUrl(proxyUrl);
+	// Return info for debugging even if URL is invalid, but enabled reflects validity
+	return {
+		enabled: isValid,
+		url: sanitizeProxyUrl(proxyUrl),
+		type: getProxyType(proxyUrl),
+	};
 }
